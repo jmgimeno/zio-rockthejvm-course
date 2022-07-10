@@ -2,8 +2,8 @@
 <project version="4">
   <component name="ProjectModuleManager">
     <modules>
-      <module fileurl="file://$PROJECT_DIR$/.idea/modules/zio.iml" filepath="$PROJECT_DIR$/.idea/modules/zio.iml" />
-      <module fileurl="file://$PROJECT_DIR$/.idea/modules/zio-build.iml" filepath="$PROJECT_DIR$/.idea/modules/zio-build.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/zio-rockthejvm-course.iml" filepath="$PROJECT_DIR$/.idea/modules/zio-rockthejvm-course.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/zio-rockthejvm-course-build.iml" filepath="$PROJECT_DIR$/.idea/modules/zio-rockthejvm-course-build.iml" />
     </modules>
   </component>
 </project>
