@@ -1,6 +1,7 @@
 package com.rockthejvm.part2effects
 
 import scala.concurrent.Future
+import scala.io.StdIn
 
 object Effects {
 
@@ -50,7 +51,9 @@ object Effects {
 
     => Future is NOT an effect
   */
+
   import scala.concurrent.ExecutionContext.Implicits.global
+
   val aFuture: Future[Int] = Future(42)
 
   /*
@@ -80,8 +83,74 @@ object Effects {
     42
   }
 
+  /**
+   * Exercises - create some IO which
+   * 1. measure the current type of the system
+   * 2. measure the duration of a computation
+   *  - user exercise 1
+   *  - use map/flatMAap combinations of MyIO
+   *    3. read something from console
+   *    4. print something to the console (e.g. "what's your name"), then read, then print a welcome message
+   */
+
+  // 1
+  val currentTime: MyIO[Long] = MyIO { () => System.currentTimeMillis() }
+
+  // 2
+  def measure[A](computation: MyIO[A]): MyIO[(Long, A)] = for {
+    startTime <- currentTime
+    result <- computation
+    endTime <- currentTime
+  } yield (endTime - startTime, result)
+
+  def measure_v2[A](computation: MyIO[A]): MyIO[(Long, A)] =
+    currentTime.flatMap { startTime =>
+      computation.flatMap { result =>
+        currentTime.map { endTime =>
+          (endTime - startTime, result)
+        }
+      }
+    }
+
+  def measure_v3[A](computation: MyIO[A]): MyIO[(Long, A)] = {
+    // After refactoring step-by-step
+    MyIO { () =>
+      val startTime = System.currentTimeMillis()
+      val result = computation.unsafeRun()
+      val endTime = System.currentTimeMillis()
+      (endTime - startTime, result)
+    }
+  }
+
+  def demoMeasurement(): Unit = {
+    val computation = MyIO { () =>
+      println("Crunching numbers ...")
+      Thread.sleep(1000)
+      println("Done!")
+      42
+    }
+
+    println(measure(computation).unsafeRun())
+    println(measure_v2(computation).unsafeRun())
+    println(measure_v3(computation).unsafeRun())
+  }
+
+  // 3
+  val readLine: MyIO[String] =
+    MyIO { () => StdIn.readLine() }
+
+  def putStrLn(line: String): MyIO[Unit] =
+    MyIO { () => println(line) }
+
+  // 4
+  val program: MyIO[Unit] = for {
+    _ <- putStrLn("what's your name? ")
+    name <- readLine
+    _ <- putStrLn(s"hello $name from MyIO")
+  } yield ()
+
   def main(args: Array[String]): Unit = {
-    // If I don't call unsafeRun, the side effects are not produced
-    anIOWithSideEffects.unsafeRun()
+    //demoMeasurement()
+    program.unsafeRun()
   }
 }
