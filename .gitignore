@@ -1,5 +1,5 @@
-# Created by https://www.toptal.com/developers/gitignore/api/scala,java,sbt,intellij
-# Edit at https://www.toptal.com/developers/gitignore?templates=scala,java,sbt,intellij
+# Created by https://www.toptal.com/developers/gitignore/api/sbt,java,scala,intellij,metals,visualstudiocode
+# Edit at https://www.toptal.com/developers/gitignore?templates=sbt,java,scala,intellij,metals,visualstudiocode
 
 ### Intellij ###
 # Covers JetBrains IDEs: IntelliJ, RubyMine, PhpStorm, AppCode, PyCharm, CLion, Android Studio, WebStorm and Rider
@@ -140,6 +140,11 @@ fabric.properties
 hs_err_pid*
 replay_pid*
 
+### Metals ###
+.metals/
+.bloop/
+project/**/metals.sbt
+
 ### SBT ###
 # Simple Build Tool
 # http://www.scala-sbt.org/release/docs/Getting-Started/Directories.html#configuring-version-control
@@ -154,8 +159,35 @@ project/plugins/project/
 .cache
 .lib/
 
+### SBT Patch ###
+.bsp/
+
 ### Scala ###
 
 # virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
 
-# End of https://www.toptal.com/developers/gitignore/api/scala,java,sbt,intellij
+### VisualStudioCode ###
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/*.code-snippets
+
+# Local History for Visual Studio Code
+.history/
+
+# Built Visual Studio Code Extensions
+*.vsix
+
+### VisualStudioCode Patch ###
+# Ignore all local history of files
+.ionide
+
+# Support for Project snippet scope
+.vscode/*.code-snippets
+
+# Ignore code-workspaces
+*.code-workspace
+
+# End of https://www.toptal.com/developers/gitignore/api/sbt,java,scala,intellij,metals,visualstudiocode
