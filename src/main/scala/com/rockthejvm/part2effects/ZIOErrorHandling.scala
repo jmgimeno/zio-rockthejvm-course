@@ -25,8 +25,8 @@ object ZIOErrorHandling extends ZIOAppDefault {
     string.length
   }
 
-  // affectfully catch errors
-  val catchError = anAttempt.catchAll(e => ZIO.succeed(s"Returning a differnt value $e"))
+  // effectfully catch errors
+  val catchError = anAttempt.catchAll(e => ZIO.succeed(s"Returning a different value $e"))
 
   // catchSome maintains the error channel and even can widen it
   val catchSelectedErrors = anAttempt.catchSome {
