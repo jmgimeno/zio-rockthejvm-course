@@ -225,6 +225,22 @@ object Fibers extends ZIOAppDefault:
       yield a + b
     }
 
+  def wordCountParallel_v2(n: Int): UIO[Int] =
+    val effects = (1 to n)
+      .map { i =>
+        for
+          fiberCountFile <- countWords(s"src/main/resources/testfile_$i.txt").fork
+          countFile      <- fiberCountFile.join
+        yield countFile
+      }
+
+    effects.reduce { (zioa, ziob) =>
+      for
+        a <- zioa
+        b <- ziob
+      yield a + b
+    }
+
   // def run =
   //   ZIO.succeed((1 to 10).foreach(i => generateRandomFile(s"src/main/resources/testfile_$i.txt")))
 
@@ -243,7 +259,7 @@ object Fibers extends ZIOAppDefault:
   // [ZScheduler-Worker-7] 1712
   // [ZScheduler-Worker-6] 12535
 
-  def run = wordCountParallel(10).debugThread
+  def run = wordCountParallel_v2(10).debugThread
   // [ZScheduler-Worker-7] 876
   // [ZScheduler-Worker-3] 1426
   // [ZScheduler-Worker-10] 674
