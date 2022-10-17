@@ -202,6 +202,9 @@ object Fibers extends ZIOAppDefault:
   def countWords(n: Int): ZIO[Any, Throwable, Int] =
     spawnCounters(n).map(_.sum)
 
+  // The official solution does not count the files in parallel.
+  // use simulateCountWords !!!
+
   // part 1 - an effect which reads one file and counts the words there
   def countWords(path: String): UIO[Int] =
     ZIO.succeed {
@@ -224,6 +227,15 @@ object Fibers extends ZIOAppDefault:
         b <- ziob
       yield a + b
     }
+
+  def simulateCountWords(path: String): UIO[Int] =
+    ZIO.succeed {
+      println(s"Opening $path")
+      val lapse = scala.util.Random.between(500, 1000)
+      Thread.sleep(lapse)
+      println(s"Closing $path")
+      lapse
+    }.debugThread
 
   def wordCountParallel_v2(n: Int): UIO[Int] =
     val effects = (1 to n)
