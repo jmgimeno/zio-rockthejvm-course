@@ -122,20 +122,41 @@ object Fibers extends ZIOAppDefault:
       fiber1: Fiber[E, A],
       fiber2: Fiber[E, B]
   ): ZIO[Any, Nothing, Fiber[E, (A, B)]] =
-    (for
-      result1 <- fiber1.join
-      result2 <- fiber2.join
-    yield (result1, result2)).fork
+    val finalEffect =
+      for
+        result1 <- fiber1.join
+        result2 <- fiber2.join
+      yield (result1, result2)
+    finalEffect.fork
+
+  // this is not the best solution but, with our knowledge, it's good enough right now
+
+  val zippedFibers_v2 =
+    for
+      fib1   <- ZIO.succeed("Result from fiber 1").debugThread.fork
+      fib2   <- ZIO.succeed("Result from fiber 2").debugThread.fork
+      fiber  <- zipFibers(fib1, fib2)
+      result <- fiber.join
+    yield result
+
+  // Let's allow for a different errors in the fibers
+  def zipFibersGeneral[E, E1 <: E, E2 <: E, A, B](
+      fiber1: Fiber[E1, A],
+      fiber2: Fiber[E2, B]
+  ): ZIO[Any, Nothing, Fiber[E, (A, B)]] =
+    val finalEffect =
+      for
+        result1 <- fiber1.join
+        result2 <- fiber2.join
+      yield (result1, result2)
+    finalEffect.fork
 
   // 2 - same thing with orElse
   def chainedFibers[E, A](
       fiber1: Fiber[E, A],
       fiber2: Fiber[E, A]
   ): ZIO[Any, Nothing, Fiber[E, A]] =
-    fiber1.await.flatMap {
-      case Exit.Success(value) => ZIO.succeed(value)
-      case _                   => fiber2.join
-    }.fork
+    fiber1.join.orElse(fiber2.join).fork
 
   // 3 - distributing a task between many fibers
   // spawn n fibers, count the number of words in each file,
@@ -155,6 +176,7 @@ object Fibers extends ZIOAppDefault:
   }
 
   def countFile(path: String): ZIO[Any, Throwable, Int] = ZIO.attempt {
+    // problems is file has more than one space between words !!!
     val reader = new FileReader(new File(path))
     var spaces = 0
     var ch     = reader.read()
@@ -180,10 +202,36 @@ object Fibers extends ZIOAppDefault:
   def countWords(n: Int): ZIO[Any, Throwable, Int] =
     spawnCounters(n).map(_.sum)
 
+  // part 1 - an effect which reads one file and counts the words there
+  def countWords(path: String): UIO[Int] =
+    ZIO.succeed {
+      val source = scala.io.Source.fromFile(path)
+      val nWords = source.getLines().mkString(" ").split(" ").count(_.nonEmpty)
+      source.close()
+      nWords
+    }.debugThread
+
+  // part 2 - spin up fibers for all the files
+  def wordCountParallel(n: Int): UIO[Int] =
+    val effects = (1 to n)
+      .map(i => s"src/main/resources/testfile_$i.txt") // list of paths
+      .map(countWords)                                 // list of effects
+      .map(_.fork)                                     // list of effects returning fibers
+      .map(fiberEff => fiberEff.flatMap(_.join))       // list of effects returning integers
+
+    effects.reduce { (zioa, ziob) =>
+      for
+        a <- zioa
+        b <- ziob
+      yield a + b
+    }
+
   // def run =
   //   ZIO.succeed((1 to 10).foreach(i => generateRandomFile(s"src/main/resources/testfile_$i.txt")))
 
-  def run = countWords(10).debugThread
+  // def run = zippedFibers_v2.debugThread
+
+  // def run = countWords(10).debugThread
   // [ZScheduler-Worker-3] 843
   // [ZScheduler-Worker-9] 740
   // [ZScheduler-Worker-10] 1180
@@ -195,3 +243,29 @@ object Fibers extends ZIOAppDefault:
   // [ZScheduler-Worker-11] 1766
   // [ZScheduler-Worker-7] 1712
   // [ZScheduler-Worker-6] 12535
+
+  def run = wordCountParallel(10).debugThread
+  // [ZScheduler-Worker-7] 876
+  // [ZScheduler-Worker-3] 1426
+  // [ZScheduler-Worker-10] 674
+  // [ZScheduler-Worker-1] 1541
+  // [ZScheduler-Worker-0] 1266
+  // [ZScheduler-Worker-5] 1598
+  // [ZScheduler-Worker-6] 768
+  // [ZScheduler-Worker-4] 1212
+  // [ZScheduler-Worker-7] 828
+  // [ZScheduler-Worker-3] 1062
+  // [ZScheduler-Worker-3] 11251
+
+  // jmgimeno:resources/ (development*) $ wc -w *                                                [16:39:28]
+  //      876 testfile_1.txt
+  //     1062 testfile_10.txt
+  //     1426 testfile_2.txt
+  //      674 testfile_3.txt
+  //     1541 testfile_4.txt
+  //     1266 testfile_5.txt
+  //     1598 testfile_6.txt
+  //      768 testfile_7.txt
+  //     1212 testfile_8.txt
+  //      828 testfile_9.txt
+  //    11251 total
