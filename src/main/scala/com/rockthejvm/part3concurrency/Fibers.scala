@@ -206,8 +206,7 @@ object Fibers extends ZIOAppDefault:
   def countWords(path: String): UIO[Int] =
     ZIO.succeed {
       val source = scala.io.Source.fromFile(path)
-      val nWords = source.getLines().mkString(" ").split(" ").count(_.nonEmpty)
-      source.close()
+      val nWords = source.getLines().mkString(" ").split("\\s+").size
       nWords
     }.debugThread
 
