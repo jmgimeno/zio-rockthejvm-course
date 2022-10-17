@@ -2,6 +2,10 @@ package com.rockthejvm.part3concurrency
 
 import zio.*
 import com.rockthejvm.utils.*
+import java.io.FileWriter
+import java.io.File
+import java.io.IOException
+import java.io.FileReader
 
 object Fibers extends ZIOAppDefault:
 
@@ -99,7 +103,7 @@ object Fibers extends ZIOAppDefault:
   // [ZScheduler-Worker-5] Result from fiber 2
   // [ZScheduler-Worker-9] (Result from fiber 1,Result from fiber 2)
 
-  def run = chainedFibers.debugThread
+  // def run = chainedFibers.debugThread
   // [ZScheduler-Worker-1] rock the JVM!
   // [ZScheduler-Worker-10][FAIL] Fail(not good,Stack trace for thread "zio-fiber-7":
   //	at com.rockthejvm.part3concurrency.Fibers.chainedFibers(Fibers.scala:70)
@@ -107,3 +111,87 @@ object Fibers extends ZIOAppDefault:
   //	at com.rockthejvm.utils.Utils$package.debugThread(Utils.scala:11)
   //	at com.rockthejvm.part3concurrency.Fibers.chainedFibers(Fibers.scala:70))
   // [ZScheduler-Worker-11] rock the JVM!
+
+  /*
+   * Exercises
+   */
+
+  // 1 - zip two fibers without using the zip combinator
+  // hint: create a fiber that waits for both of these fibers
+  def zipFibers[E, A, B](
+      fiber1: Fiber[E, A],
+      fiber2: Fiber[E, B]
+  ): ZIO[Any, Nothing, Fiber[E, (A, B)]] =
+    (for
+      result1 <- fiber1.join
+      result2 <- fiber2.join
+    yield (result1, result2)).fork
+
+  // 2 - same thing with orElse
+  def chainedFibers[E, A](
+      fiber1: Fiber[E, A],
+      fiber2: Fiber[E, A]
+  ): ZIO[Any, Nothing, Fiber[E, A]] =
+    fiber1.await.flatMap {
+      case Exit.Success(value) => ZIO.succeed(value)
+      case _                   => fiber2.join
+    }.fork
+
+  // 3 - distributing a task between many fibers
+  // spawn n fibers, count the number of words in each file,
+  // then aggregate all the results together in one big number
+  def generateRandomFile(path: String): Unit = {
+    val random = scala.util.Random
+    val chars  = 'a' to 'z'
+    val nWords = random.nextInt(2000)
+    val content =
+      (1 to nWords)
+        .map(_ => (1 to random.nextInt(10)).map(_ => chars(random.nextInt(26))).mkString)
+        .mkString(" ")
+    val writer = new FileWriter(new File(path))
+    writer.write(content)
+    writer.flush()
+    writer.close()
+  }
+
+  def countFile(path: String): ZIO[Any, Throwable, Int] = ZIO.attempt {
+    val reader = new FileReader(new File(path))
+    var spaces = 0
+    var ch     = reader.read()
+    while (ch != -1) {
+      if (ch == ' ') spaces += 1
+      ch = reader.read()
+    }
+    reader.close()
+    spaces + 1
+  }
+
+  def spawnCounters(n: Int): ZIO[Any, Throwable, List[Int]] =
+    if n == 0
+    then ZIO.succeed(List())
+    else
+      for
+        fib1 <- countFile(s"src/main/resources/testfile_$n.txt").debugThread.fork
+        fib2 <- spawnCounters(n - 1).fork
+        head <- fib1.join
+        tail <- fib2.join
+      yield head :: tail
+
+  def countWords(n: Int): ZIO[Any, Throwable, Int] =
+    spawnCounters(n).map(_.sum)
+
+  // def run =
+  //   ZIO.succeed((1 to 10).foreach(i => generateRandomFile(s"src/main/resources/testfile_$i.txt")))
+
+  def run = countWords(10).debugThread
+  // [ZScheduler-Worker-3] 843
+  // [ZScheduler-Worker-9] 740
+  // [ZScheduler-Worker-10] 1180
+  // [ZScheduler-Worker-1] 923
+  // [ZScheduler-Worker-5] 986
+  // [ZScheduler-Worker-0] 1370
+  // [ZScheduler-Worker-4] 1429
+  // [ZScheduler-Worker-6] 1586
+  // [ZScheduler-Worker-11] 1766
+  // [ZScheduler-Worker-7] 1712
+  // [ZScheduler-Worker-6] 12535
