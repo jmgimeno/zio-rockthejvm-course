@@ -199,6 +199,7 @@ object Fibers extends ZIOAppDefault:
         tail <- fib2.join
       yield head :: tail
 
+  // Parallel
   def countWords(n: Int): ZIO[Any, Throwable, Int] =
     spawnCounters(n).map(_.sum)
 
@@ -214,10 +215,11 @@ object Fibers extends ZIOAppDefault:
     }.debugThread
 
   // part 2 - spin up fibers for all the files
-  def wordCountParallel(n: Int): UIO[Int] =
+  // Sequential
+  def wordCountParallel_v1(n: Int): UIO[Int] =
     val effects = (1 to n)
       .map(i => s"src/main/resources/testfile_$i.txt") // list of paths
-      .map(countWords)                                 // list of effects
+      .map(simulateCountWords)                         // list of effects
       .map(_.fork)                                     // list of effects returning fibers
       .map(fiberEff => fiberEff.flatMap(_.join))       // list of effects returning integers
 
@@ -237,11 +239,12 @@ object Fibers extends ZIOAppDefault:
       lapse
     }.debugThread
 
+  // Sequential
   def wordCountParallel_v2(n: Int): UIO[Int] =
     val effects = (1 to n)
       .map { i =>
         for
-          fiberCountFile <- countWords(s"src/main/resources/testfile_$i.txt").fork
+          fiberCountFile <- simulateCountWords(s"src/main/resources/testfile_$i.txt").fork
           countFile      <- fiberCountFile.join
         yield countFile
       }
@@ -252,6 +255,71 @@ object Fibers extends ZIOAppDefault:
         b <- ziob
       yield a + b
     }
+
+  // Sequential
+  def wordCountParallel_v3(n: Int): UIO[Int] =
+    val effects = (1 to n)
+      .map { i =>
+        simulateCountWords(s"src/main/resources/testfile_$i.txt").fork
+      }
+
+    effects.foldLeft(ZIO.succeed(0)) { (zioAcc, effFiber) =>
+      for
+        acc    <- zioAcc
+        fiber  <- effFiber
+        result <- fiber.join
+      yield acc + result
+    }
+
+  // Parallel
+  def wordCountParallel_v4(n: Int): UIO[Int] =
+    val effects = (1 to n)
+      .map { i =>
+        simulateCountWords(s"src/main/resources/testfile_$i.txt").fork
+      }
+
+    spawnAndCount(effects).map(_.sum)
+
+  def spawnAndCount(effects: Seq[UIO[Fiber[Nothing, Int]]]): UIO[List[Int]] =
+    effects.foldRight(ZIO.succeed(List.empty[Int])) { (effect, acc) =>
+      for
+        fiber <- effect
+        rest  <- acc.fork
+        head  <- fiber.join
+        tail  <- rest.join
+      yield head :: tail
+    }
+
+  // Parallel
+  def wordCountParallel_v5(n: Int): UIO[Int] =
+    (1 to n)
+      .map { i =>
+        simulateCountWords(s"src/main/resources/testfile_$i.txt")
+      }
+      .reduce { (counter1, counter2) =>
+        for
+          fiber1  <- counter1.fork
+          fiber2  <- counter2.fork
+          result1 <- fiber1.join
+          result2 <- fiber2.join
+        yield result1 + result2
+      }
+
+  // Parallel
+  def wordCountParallel_v6(n: Int): UIO[Int] =
+    (1 to n)
+      .map { i =>
+        simulateCountWords(s"src/main/resources/testfile_$i.txt").fork
+      }
+      .reduce { (counter1, counter2) =>
+        (for
+          fiber1  <- counter1
+          fiber2  <- counter2
+          result1 <- fiber1.join
+          result2 <- fiber2.join
+        yield result1 + result2).fork
+      }
+      .flatMap(_.join)
 
   // def run =
   //   ZIO.succeed((1 to 10).foreach(i => generateRandomFile(s"src/main/resources/testfile_$i.txt")))
@@ -271,7 +339,7 @@ object Fibers extends ZIOAppDefault:
   // [ZScheduler-Worker-7] 1712
   // [ZScheduler-Worker-6] 12535
 
-  def run = wordCountParallel_v2(10).debugThread
+  def run = wordCountParallel_v6(10).debugThread
   // [ZScheduler-Worker-7] 876
   // [ZScheduler-Worker-3] 1426
   // [ZScheduler-Worker-10] 674
