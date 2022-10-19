@@ -110,6 +110,13 @@ object Interruptions extends ZIOAppDefault:
       result <- fib.join
     yield result
 
+  def testTimeout = timeout(
+    ZIO.succeed("starting...").debugThread *>
+      ZIO.sleep(2.seconds) *>
+      ZIO.succeed("I made it").debugThread,
+    1.seconds
+  ).debugThread
+
   /*
     2 - timeout v2
       - if zio is successful before timeout => a successful effect with Some(a)
@@ -120,14 +127,18 @@ object Interruptions extends ZIOAppDefault:
   def timeout_v2[R, E, A](zio: ZIO[R, E, A], time: Duration): ZIO[R, E, Option[A]] =
     timeout(zio, time)
       .foldCauseZIO(
-        {
-          case Cause.Interrupt(_, _) => ZIO.succeed(None)
-          case Cause.Fail(e, _)      => ZIO.fail(e)
-          case _                     => ZIO.dieMessage("unknown")
-        },
-        { a =>
-          ZIO.succeed(Some(a))
-        }
+        cause => if cause.isInterrupted then ZIO.succeed(None) else ZIO.failCause(cause),
+        value => ZIO.succeed(Some(value))
       )
 
-  def run = testRace
+  // NOTE: My pattern matching didn't work because the Interrupt is inside of a Then, so it is
+  // not "directly" an interruption (see implementation of isInterrupted)
+
+  def testTimeout_v2 = timeout_v2(
+    ZIO.succeed("starting...").debugThread *>
+      ZIO.sleep(2.seconds) *>
+      ZIO.succeed("I made it").debugThread,
+    1.seconds
+  ).debugThread
+
+  def run = testTimeout_v2
