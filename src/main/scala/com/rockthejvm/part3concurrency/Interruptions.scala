@@ -117,6 +117,19 @@ object Interruptions extends ZIOAppDefault:
     1.seconds
   ).debugThread
 
+  def timeout_alt[R, E, A](zio: ZIO[R, E, A], time: Duration): ZIO[R, E, A] =
+    ZIO.sleep(time).raceEither(zio).flatMap {
+      case Left(())     => ZIO.interrupt
+      case Right(value) => ZIO.succeed(value)
+    }
+
+  def testTimeout_alt = timeout_alt(
+    ZIO.succeed("starting...").debugThread *>
+      ZIO.sleep(2.seconds) *>
+      ZIO.succeed("I made it").debugThread,
+    1.seconds
+  ).debugThread
+
   /*
     2 - timeout v2
       - if zio is successful before timeout => a successful effect with Some(a)
@@ -141,4 +154,4 @@ object Interruptions extends ZIOAppDefault:
     1.seconds
   ).debugThread
 
-  def run = testTimeout_v2
+  def run = testTimeout_alt
