@@ -211,6 +211,7 @@ object Fibers extends ZIOAppDefault:
     ZIO.succeed {
       val source = scala.io.Source.fromFile(path)
       val nWords = source.getLines().mkString(" ").split("\\s+").size
+      source.close()
       nWords
     }.debugThread
 
