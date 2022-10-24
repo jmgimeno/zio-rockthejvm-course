@@ -103,4 +103,29 @@ object Resources extends ZIOAppDefault:
       _   <- ZIO.sleep(2.seconds) *> fib.interrupt
     yield ()
 
-  def run = testInterruptFileDisplay
+  // acquireRelease vs. acquireReleaseWith
+
+  // nested resource acquisition difficult to read
+  def connectionFromConfig(path: String): UIO[Unit] =
+    ZIO.acquireReleaseWith(openFileScanner(path))(scanner =>
+      ZIO.succeed("closing file").debugThread *> ZIO.succeed(scanner.close)
+    )(scanner =>
+      ZIO.acquireReleaseWith(Connection.create(scanner.nextLine()))(_.close) { conn =>
+        conn.open *> ZIO.never
+      }
+    )
+
+  // nested resource
+  def connectionFromConfig_v2(path: String): UIO[Unit] = ZIO.scoped {
+    for
+      scanner <- ZIO.acquireRelease(openFileScanner(path))(scanner =>
+        ZIO.succeed("closing file").debugThread *> ZIO.succeed(scanner.close)
+      )
+      conn <- ZIO.acquireRelease(Connection.create(scanner.nextLine()))(_.close)
+      _    <- conn.open *> ZIO.never
+    yield ()
+  }
+
+  // TODO: Why closing messages are not shown?
+
+  def run = connectionFromConfig_v2("src/main/resources/connection.conf")
