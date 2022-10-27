@@ -126,6 +126,8 @@ object Resources extends ZIOAppDefault:
     yield ()
   }
 
-  // TODO: Why closing messages are not shown?
+  // Why closing messages are not shown?
+  //   It seems the problem lays in that vscode closes output to console too early
+  //   https://github.com/scalameta/metals/issues/2043
 
-  def run = connectionFromConfig_v2("src/main/resources/connection.conf")
+  def run = connectionFromConfig("src/main/resources/connection.conf")
