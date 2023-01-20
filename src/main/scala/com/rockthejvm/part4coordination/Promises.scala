@@ -112,4 +112,117 @@ object Promises extends ZIOAppDefault:
       promise    <- Promise.make[Throwable, String]
       _          <- downloadFile(contentRef, promise) zipPar notifyFileComplete(promise)
     yield ()
-  def run = downloadFileWithRefPromise()
+
+  /** Exercises:
+    */
+
+  /**   1. Write a simulated "egg boiler" with two ZIOs
+    *      - one increments a counter every second
+    *      - one waits for the counter to become 10, after which it will 'ring a bell'
+    */
+
+  def eggBoiler_JM(): UIO[Unit] =
+    def incrementer(counter: Ref[Int], finished: Promise[Nothing, Unit]): UIO[Unit] =
+      for
+        count <- counter.updateAndGet(_ + 1)
+        _ <-
+          if (count == 10)
+          then finished.succeed(())
+          else
+            ZIO.succeed("sleeping...").debugThread
+              *> ZIO.sleep(1.second)
+              *> incrementer(counter, finished)
+      yield ()
+
+    for
+      counter  <- Ref.make(0)
+      finished <- Promise.make[Nothing, Unit]
+      _        <- ZIO.succeed("start boiling...").debugThread
+      _        <- incrementer(counter, finished).fork
+      _        <- finished.await
+      _        <- ZIO.succeed("finished boiling").debugThread
+    yield ()
+
+  def eggBoiler_DAniel(): UIO[Unit] =
+    def eggReady(signal: Promise[Nothing, Unit]) =
+      for
+        _ <- ZIO.succeed("Egg boiling on some other fiber, waiting...").debugThread
+        _ <- signal.await
+        _ <- ZIO.succeed("EGG READY!").debugThread
+      yield ()
+
+    def tickingClock(ticks: Ref[Int], signal: Promise[Nothing, Unit]): UIO[Unit] =
+      for
+        _     <- ZIO.sleep(1.second)
+        count <- ticks.updateAndGet(_ + 1)
+        _     <- ZIO.succeed(count).debugThread
+        _     <- if (count == 10) then signal.succeed(()) else tickingClock(ticks, signal)
+      yield ()
+
+    for
+      ticks  <- Ref.make(0)
+      signal <- Promise.make[Nothing, Unit]
+      _      <- eggReady(signal) zipPar tickingClock(ticks, signal)
+    yield ()
+
+  /** 2.Write a "racePair"
+    *   - use a Promise which can hold an Either[exit for A, exit for B]
+    *   - start a fiber for each ZIO
+    *   - on completion (with any status), each ZIP needs to complete that Promise (hint: use a
+    *     finalizer)
+    *   - waiting on the promise's value can be interrupted!
+    *   - if the whole race is interrupted, interrupt the running fibers
+    */
+
+  // NOTE: The official solution does not have .interruptible on the zios, so they are
+  // uninterruptibles, making the racePair almost useless
+
+  def racePair_JM[R, E, A, B](
+      zioa: => ZIO[R, E, A],
+      ziob: => ZIO[R, E, B]
+  ): ZIO[R, E, Either[(Exit[E, A], Fiber[E, B]), (Fiber[E, A], Exit[E, B])]] =
+    ZIO.uninterruptibleMask { restore =>
+      for
+        promise <- Promise.make[Nothing, Either[Exit[E, A], Exit[E, B]]]
+        fibA    <- zioa.interruptible.onExit(exita => promise.succeed(Left(exita))).fork
+        fibB    <- ziob.interruptible.onExit(exitb => promise.succeed(Right(exitb))).fork
+        result <- restore(promise.await).onInterrupt {
+          for
+            interrupta <- fibA.interrupt.fork
+            interruptb <- fibB.interrupt.fork
+            _          <- interrupta.join
+            _          <- interruptb.join
+          yield ()
+        }
+      yield result match
+        case Left(exita)  => Left((exita, fibB))
+        case Right(exitb) => Right((fibA, exitb))
+    }
+
+  val demoRacePair =
+    val zioa = ZIO
+      .sleep(5.second)
+      .as(1)
+      .debugThread
+      .onInterrupt(ZIO.succeed("first interrupted").debugThread)
+    val ziob = ZIO
+      .sleep(8.seconds)
+      .as(2)
+      .debugThread
+      .onInterrupt(ZIO.succeed("second interrupted").debugThread)
+
+    // val pair = racePair(zioa, ziob)
+    // pair.flatMap {
+    //   case Left((exita, fibb)) =>
+    //     fibb.interrupt *> ZIO.succeed("first won").debugThread *> ZIO.succeed(exita).debugThread
+    //   case Right((fiba, exitb)) =>
+    //     fiba.interrupt *> ZIO.succeed("second won").debugThread *> ZIO.succeed(exitb).debugThread
+    // }
+
+    for
+      fib <- racePair_JM(zioa, ziob).fork
+      _   <- ZIO.sleep(3.seconds)
+      _   <- fib.interrupt
+    yield ()
+
+  def run = demoRacePair
