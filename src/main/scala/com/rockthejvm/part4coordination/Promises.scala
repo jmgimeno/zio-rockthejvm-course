@@ -174,18 +174,15 @@ object Promises extends ZIOAppDefault:
     *   - if the whole race is interrupted, interrupt the running fibers
     */
 
-  // NOTE: The official solution does not have .interruptible on the zios, so they are
-  // uninterruptibles, making the racePair almost useless
-
-  def racePair_JM[R, E, A, B](
+  def racePair[R, E, A, B](
       zioa: => ZIO[R, E, A],
       ziob: => ZIO[R, E, B]
   ): ZIO[R, E, Either[(Exit[E, A], Fiber[E, B]), (Fiber[E, A], Exit[E, B])]] =
     ZIO.uninterruptibleMask { restore =>
       for
         promise <- Promise.make[Nothing, Either[Exit[E, A], Exit[E, B]]]
-        fibA    <- zioa.interruptible.onExit(exita => promise.succeed(Left(exita))).fork
-        fibB    <- ziob.interruptible.onExit(exitb => promise.succeed(Right(exitb))).fork
+        fibA    <- restore(zioa).onExit(exita => promise.succeed(Left(exita))).fork
+        fibB    <- restore(ziob).onExit(exitb => promise.succeed(Right(exitb))).fork
         result <- restore(promise.await).onInterrupt {
           for
             interrupta <- fibA.interrupt.fork
@@ -211,18 +208,12 @@ object Promises extends ZIOAppDefault:
       .debugThread
       .onInterrupt(ZIO.succeed("second interrupted").debugThread)
 
-    // val pair = racePair(zioa, ziob)
-    // pair.flatMap {
-    //   case Left((exita, fibb)) =>
-    //     fibb.interrupt *> ZIO.succeed("first won").debugThread *> ZIO.succeed(exita).debugThread
-    //   case Right((fiba, exitb)) =>
-    //     fiba.interrupt *> ZIO.succeed("second won").debugThread *> ZIO.succeed(exitb).debugThread
-    // }
-
-    for
-      fib <- racePair_JM(zioa, ziob).fork
-      _   <- ZIO.sleep(3.seconds)
-      _   <- fib.interrupt
-    yield ()
+    val pair = racePair(zioa, ziob)
+    pair.flatMap {
+      case Left((exita, fibb)) =>
+        fibb.interrupt *> ZIO.succeed("first won").debugThread *> ZIO.succeed(exita).debugThread
+      case Right((fiba, exitb)) =>
+        fiba.interrupt *> ZIO.succeed("second won").debugThread *> ZIO.succeed(exitb).debugThread
+    }
 
   def run = demoRacePair
